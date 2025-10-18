@@ -2539,11 +2539,16 @@ function model = comprehensiveModelAdjustment(model, optParams)
     nRegions = 2;
     regionSize = 15;
     
+    halfXLow = floor((regionSize-1)/2);
+    halfXHigh = ceil((regionSize-1)/2);
+    halfZLow = floor((regionSize-1)/2);
+    halfZHigh = ceil((regionSize-1)/2);
+
     for r = 1:nRegions
         % 随机选择区域
-        cx = randi([regionSize, nx-regionSize]);
-        cy = randi([regionSize, ny-regionSize]);
-        cz = randi([regionSize/2, nz-regionSize/2]);
+        cx = randi([1 + halfXLow, nx - halfXHigh]);
+        cy = randi([1 + halfXLow, ny - halfXHigh]);
+        cz = randi([1 + halfZLow, nz - halfZHigh]);
         
         % 创建具有目标特征的局部结构
         localStructure = createTargetStructure(regionSize, optParams);
@@ -2644,12 +2649,16 @@ function model = blendStructureIntoModel(model, structure, cx, cy, cz)
     [sx, sy, sz] = size(structure);
     blendFactor = 0.7;
     
+    halfXLow = floor((sx-1)/2);
+    halfYLow = floor((sy-1)/2);
+    halfZLow = floor((sz-1)/2);
+
     for i = 1:sx
         for j = 1:sy
             for k = 1:sz
-                x = cx - sx/2 + i;
-                y = cy - sy/2 + j;
-                z = cz - sz/2 + k;
+                x = cx + (i - 1) - halfXLow;
+                y = cy + (j - 1) - halfYLow;
+                z = cz + (k - 1) - halfZLow;
                 
                 if x >= 1 && x <= size(model,1) && ...
                     y >= 1 && y <= size(model,2) && ...
@@ -3671,23 +3680,27 @@ function move = generateLargeScaleMove(model, optParams)
     % 随机选择一个较大的区域
     [nx, ny, nz] = size(model);
     regionSize = 10;
-    
-    cx = randi([regionSize, nx-regionSize]);
-    cy = randi([regionSize, ny-regionSize]);
-    cz = randi([regionSize/2, nz-regionSize/2]);
+    xyRadius = regionSize;
+    zRadiusLow = floor(regionSize/2);
+    zRadiusHigh = ceil(regionSize/2);
+
+    cx = randi([1 + xyRadius, nx - xyRadius]);
+    cy = randi([1 + xyRadius, ny - xyRadius]);
+    cz = randi([1 + zRadiusLow, nz - zRadiusHigh]);
     
     % 在该区域进行大规模调整
     move.linearIdx = [];
     move.oldValues = [];
     move.newValues = [];
     
-    for x = cx-regionSize:cx+regionSize
-        for y = cy-regionSize:cy+regionSize
-            for z = cz-regionSize/2:cz+regionSize/2
+    for x = cx-xyRadius:cx+xyRadius
+        for y = cy-xyRadius:cy+xyRadius
+            for z = cz-zRadiusLow:cz+zRadiusHigh
                 if x >= 1 && x <= nx && y >= 1 && y <= ny && z >= 1 && z <= nz
                     % 根据距离中心的距离决定翻转概率
                     dist = sqrt((x-cx)^2 + (y-cy)^2 + (z-cz)^2);
-                    flipProb = exp(-dist^2 / (2*(regionSize/2)^2)) * 0.3;
+                    maxRadius = max([xyRadius, zRadiusLow, zRadiusHigh, 1]);
+                    flipProb = exp(-dist^2 / (2*maxRadius^2)) * 0.3;
                     
                     if rand() < flipProb
                         idx = sub2ind(size(model), x, y, z);
@@ -4297,9 +4310,14 @@ function model = balancedPerturbation(model, optParams)
             case 3
                 % 混合扰动
                 regionSize = 15;
-                cx = randi([regionSize, nx-regionSize]);
-                cy = randi([regionSize, ny-regionSize]);
-                cz = randi([regionSize/2, nz-regionSize/2]);
+                xyRadius = floor((regionSize-1)/2);
+                xyHigh = ceil((regionSize-1)/2);
+                zRadiusLow = floor((regionSize-1)/2);
+                zRadiusHigh = ceil((regionSize-1)/2);
+
+                cx = randi([1 + xyRadius, nx - xyHigh]);
+                cy = randi([1 + xyRadius, ny - xyHigh]);
+                cz = randi([1 + zRadiusLow, nz - zRadiusHigh]);
                 
                 % 创建目标特征的局部结构
                 localStructure = createTargetStructure(regionSize, optParams);
@@ -4453,37 +4471,41 @@ function model = localSpatialPerturbation(model, optParams)
     
     % 选择一个区域
     regionSize = 20;
-    cx = randi([regionSize, nx-regionSize]);
-    cy = randi([regionSize, ny-regionSize]);
-    cz = randi([regionSize/2, nz-regionSize/2]);
+    xyRadius = regionSize;
+    zRadiusLow = floor(regionSize/2);
+    zRadiusHigh = ceil(regionSize/2);
+
+    cx = randi([1 + xyRadius, nx - xyRadius]);
+    cy = randi([1 + xyRadius, ny - xyRadius]);
+    cz = randi([1 + zRadiusLow, nz - zRadiusHigh]);
     
     % 在该区域应用方向性操作
     if targetAniso > 0.5
         % 增强Z方向的连续性
-        for z = cz-regionSize/2:cz+regionSize/2
+        for z = cz-zRadiusLow:cz+zRadiusHigh
             if z >= 1 && z <= nz
-                slice = model(cx-regionSize:cx+regionSize, ...
-                    cy-regionSize:cy+regionSize, z);
+                slice = model(cx-xyRadius:cx+xyRadius, ...
+                    cy-xyRadius:cy+xyRadius, z);
                 if z > 1
-                    prevSlice = model(cx-regionSize:cx+regionSize, ...
-                        cy-regionSize:cy+regionSize, z-1);
+                    prevSlice = model(cx-xyRadius:cx+xyRadius, ...
+                        cy-xyRadius:cy+xyRadius, z-1);
                     % 增加与前一层的相似性
                     similarity = rand(size(slice)) < 0.7;
                     slice(similarity) = prevSlice(similarity);
-                    model(cx-regionSize:cx+regionSize, ...
-                        cy-regionSize:cy+regionSize, z) = slice;
+                    model(cx-xyRadius:cx+xyRadius, ...
+                        cy-xyRadius:cy+xyRadius, z) = slice;
                 end
             end
         end
     else
         % 增加各向同性
-        region = model(cx-regionSize:cx+regionSize, ...
-            cy-regionSize:cy+regionSize, ...
-            cz-regionSize/2:cz+regionSize/2);
+        region = model(cx-xyRadius:cx+xyRadius, ...
+            cy-xyRadius:cy+xyRadius, ...
+            cz-zRadiusLow:cz+zRadiusHigh);
         region = medfilt3(double(region), [3, 3, 3]) > 0.5;
-        model(cx-regionSize:cx+regionSize, ...
-            cy-regionSize:cy+regionSize, ...
-            cz-regionSize/2:cz+regionSize/2) = region;
+        model(cx-xyRadius:cx+xyRadius, ...
+            cy-xyRadius:cy+xyRadius, ...
+            cz-zRadiusLow:cz+zRadiusHigh) = region;
     end
 end
 
